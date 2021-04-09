@@ -3,6 +3,7 @@ package trial
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,21 +16,30 @@ import (
 // x is a slice or array -> y is contained in x
 // x is a map -> y is a map and is contained in x
 func Contains(x, y interface{}) (bool, string) {
+	opt := containsOpt{substring: true, Slice: true, Map: true}
 	// if nothing is expected we have a match
 	if y == nil {
 		return true, ""
 	}
-	r := contains(x, y)
+	r := opt.contains(x, y)
 	if r == nil {
 		return true, ""
 	}
 	return false, r.String()
 }
 
+type containsOpt struct {
+	substring bool
+	regex     bool
+	Slice     bool
+	Map       bool
+}
+
 const (
-	SubStrings = iota
-	SubSlices
-	SubMaps
+	SubString int = 1 << iota
+	Regex
+	Slice
+	Map
 )
 
 // ContainsOpt allow configurable options to the contains method
@@ -37,13 +47,27 @@ const (
 // 2. Check for sub-slices (["a"] -> ["a","b","c"])
 // 3. Check for sub-maps
 // 4. use regex match as a sub-string check
-/*
-func ContainsOpt(o interface{}) CompareFunc {
-	return Contains
-}
-*/
 
-func contains(x, y interface{}) differ {
+func ContainsOpt(i int) CompareFunc {
+	opt := containsOpt{
+		substring: (i & SubString) == SubString,
+		regex:     (i & Regex) == Regex,
+		Slice:     (i & Slice) == Slice,
+		Map:       (i & Map) == Map,
+	}
+	return func(x, y interface{}) (bool, string) {
+		if y == nil {
+			return true, ""
+		}
+		r := opt.contains(x, y)
+		if r == nil {
+			return true, ""
+		}
+		return false, r.String()
+	}
+}
+
+func (opt *containsOpt) contains(x, y interface{}) differ {
 	valX := reflect.ValueOf(x)
 	valY := reflect.ValueOf(y)
 	switch valX.Kind() {
@@ -62,12 +86,17 @@ func contains(x, y interface{}) differ {
 				for i, v := range arr {
 					arrI[i] = v
 				}
-				return isInSlice(reflect.ValueOf(v), arrI...)
-
+				return opt.isInSlice(reflect.ValueOf(v), arrI...)
 			}
 		}
-		if strings.Contains(valX.String(), s) {
+		if opt.substring && strings.Contains(valX.String(), s) {
 			return nil
+		}
+		if opt.regex {
+			r, err := regexp.Compile(s)
+			if err == nil && r.MatchString(valX.String()) {
+				return nil
+			}
 		}
 		return newDiff(x, s)
 	case reflect.Array:
@@ -78,12 +107,12 @@ func contains(x, y interface{}) differ {
 			for i := 0; i < valY.Len(); i++ {
 				child[i] = valY.Index(i).Interface()
 			}
-			if d := isInSlice(valX, child...); d != nil {
+			if d := opt.isInSlice(valX, child...); d != nil {
 				return newDiffMsg(x, y, d.String())
 			}
 			return nil
 		}
-		if d := isInSlice(valX, y); d != nil {
+		if d := opt.isInSlice(valX, y); d != nil {
 			return newDiffMsg(x, y, d.String())
 		}
 		return nil
@@ -92,7 +121,7 @@ func contains(x, y interface{}) differ {
 			return newMessagef("type mismatch %T %T", x, y)
 
 		}
-		if d := isInMap(valX, valY); d != nil {
+		if d := opt.isInMap(valX, valY); d != nil {
 			return newDiffMsg(x, y, d.String())
 		}
 		return nil
@@ -104,7 +133,7 @@ func contains(x, y interface{}) differ {
 	return newMessagef(s)
 }
 
-func isInMap(parent reflect.Value, child reflect.Value) differ {
+func (opt *containsOpt) isInMap(parent reflect.Value, child reflect.Value) differ {
 	d := &mapDiff{values: make(map[interface{}][]string, 0)}
 	for _, key := range child.MapKeys() {
 		p := parent.MapIndex(key)
@@ -113,14 +142,14 @@ func isInMap(parent reflect.Value, child reflect.Value) differ {
 			continue
 		}
 		c := child.MapIndex(key)
-		if ok := contains(p.Interface(), c.Interface()); ok != nil {
+		if ok := opt.contains(p.Interface(), c.Interface()); ok != nil {
 			d.values[key] = append(d.values[key], ok.String())
 		}
 	}
 	return d.diffOrNil()
 }
 
-func isInSlice(parent reflect.Value, child ...interface{}) differ {
+func (opt *containsOpt) isInSlice(parent reflect.Value, child ...interface{}) differ {
 	c := &collection{
 		found:   make([]interface{}, 0),
 		missing: make([]interface{}, 0),
@@ -129,7 +158,7 @@ func isInSlice(parent reflect.Value, child ...interface{}) differ {
 		found := false
 		for i := 0; i < parent.Len(); i++ {
 			p := parent.Index(i)
-			if contains(p.Interface(), v) == nil {
+			if opt.contains(p.Interface(), v) == nil {
 				found = true
 				c.found = append(c.found, v)
 				break

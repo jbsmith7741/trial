@@ -249,6 +249,49 @@ func TestComparerOptions(t *testing.T) {
 		},
 	}
 	New(fn, cases).SubTest(t)
+}
+
+func TestContainsOpt(t *testing.T) {
+	type input struct {
+		fn  CompareFunc
+		act interface{}
+		exp interface{}
+	}
+	fn := func(in Input) (interface{}, error) {
+		i := in.Interface().(input)
+		eq, diff := i.fn(i.act, i.exp)
+		if !eq {
+			return nil, errors.New(diff)
+		}
+		return eq, nil
+	}
+	cases := Cases{
+		"regex-match": {
+			Input: input{
+				fn:  ContainsOpt(Regex),
+				act: "path/file/date/2020-06-05",
+				exp: `path/file/date/.*`,
+			},
+			Expected: true,
+		},
+		"regex with substring": {
+			Input: input{
+				fn:  ContainsOpt(Regex | SubString),
+				act: "path/file/date/2020-06-05",
+				exp: `path/file/date/.*`,
+			},
+			Expected: true,
+		},
+		"exact match": {
+			Input: input{
+				fn:  ContainsOpt(0),
+				act: "path/file/date/2020-06-05",
+				exp: `path/file/date/.*`,
+			},
+			ShouldErr: true,
+		},
+	}
+	New(fn, cases).SubTest(t)
 
 }
 
