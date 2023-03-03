@@ -2,6 +2,7 @@ package trial
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 	"time"
@@ -190,6 +191,26 @@ func IgnoreFields(f ...string) func(interface{}) cmp.Option {
 	}
 }
 
+func SetContainsForFields(names ...string) func(any) cmp.Option {
+	return func(i any) cmp.Option {
+		filterPath := func(p cmp.Path) bool {
+			log.Println(p.GoString(), p.String())
+			for _, s := range names {
+				if s == p.String() {
+					return true
+				}
+			}
+			return false
+		}
+
+		fn := func(x, y any) bool {
+			return contains(x, y) == nil
+		}
+
+		return cmp.FilterPath(filterPath, cmp.Comparer(fn))
+	}
+}
+
 // IgnoreTypes is a wrapper around the cmpopts.IgnoreTypes
 // it allows ignore the type of the values passed in
 // int32(0), int(0), string(0), time.Duration(0), etc
@@ -316,7 +337,7 @@ func newMessagef(s string, args ...interface{}) message {
 	return message(fmt.Sprintf(s, args...))
 }
 
-//collection is a differ used for slices to show what items match and which don't
+// collection is a differ used for slices to show what items match and which don't
 type collection struct {
 	found   []interface{}
 	missing []interface{}

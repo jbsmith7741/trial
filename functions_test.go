@@ -290,6 +290,14 @@ func TestComparerOptions(t *testing.T) {
 			},
 			Expected: true,
 		},
+		"Contains string": {
+			Input: input{
+				fn: EqualOpt(SetContainsForFields("Value")),
+				v1: struct{ Value string }{Value: "abcdefg"},
+				v2: struct{ Value string }{Value: "abc"},
+			},
+			Expected: true,
+		},
 	}
 	New(fn, cases).SubTest(t)
 
